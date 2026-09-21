@@ -9178,7 +9178,7 @@ async function __cntExamenElegirAlAzar(mid){
 // id de unidad, preguntas numeradas, opciones a)/b)/c)/d) con ✔ en la correcta).
 async function __cntDescargarExamenWord(mid){
   __cntExamenInit(mid);
-  if(window.__docxCdnFallo || typeof window.docx === 'undefined'){
+  if(!(await __asegurarDocx())){
     if(typeof toast==='function') toast('No se pudo cargar el generador de Word (revisa tu internet) e intenta de nuevo','error');
     return;
   }
@@ -10771,7 +10771,7 @@ async function __cntImportarGlosario(inputEl){
 }
 async function __cntDescargarGlosarioWord(){
   const statusEl = document.getElementById('cntGlosarioWordStatus');
-  if(window.__docxCdnFallo || typeof window.docx === 'undefined'){
+  if(!(await __asegurarDocx())){
     if(typeof toast==='function') toast('No se pudo cargar el generador de Word (revisa tu internet) e intenta de nuevo','error');
     return;
   }
@@ -12875,6 +12875,26 @@ function __dashCargarScript(src){
     document.head.appendChild(s);
   });
 }
+// La librería de Word (docx) se intenta cargar una sola vez al abrir la página
+// (etiqueta fija en el <head>) — si esa carga falla por cualquier motivo de red
+// (bloqueo institucional, CDN caído un momento, etc.), antes se quedaba fallada
+// para siempre en esa sesión, sin reintentar. Esta función SIEMPRE reintenta
+// antes de rendirse: primero la misma CDN, luego una CDN alterna distinta (por
+// si la que falla es justo esa, no internet en general). Se puede llamar las
+// veces que haga falta — si ya está cargada, regresa al toque.
+async function __asegurarDocx(){
+  if(window.docx) return true;
+  const intentos = [
+    'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js',
+    'https://unpkg.com/docx@8.5.0/build/index.js',
+  ];
+  for(const url of intentos){
+    try{ await __dashCargarScript(url); if(window.docx){ window.__docxCdnFallo=false; return true; } }
+    catch(e){ /* intenta la siguiente CDN */ }
+  }
+  window.__docxCdnFallo = true;
+  return false;
+}
 function __wordBarraHTML(pct, color, ancho){
   ancho = ancho||280;
   const w = Math.max(0, Math.round(ancho*Math.max(0,Math.min(100,pct))/100));
@@ -13179,7 +13199,7 @@ function __docxFilaClaveValor(clave, valor, colorValor){
   ]});
 }
 async function __docxDescargar(children, nombreArchivo){
-  if(window.__docxCdnFallo || typeof window.docx === 'undefined'){
+  if(!(await __asegurarDocx())){
     toast('No se pudo cargar el generador de Word (revisa tu internet) e intenta de nuevo','error');
     return false;
   }
@@ -13201,7 +13221,7 @@ async function __docxDescargar(children, nombreArchivo){
 }
 async function __dashExportarWord(){
   if(!__dashVista){ toast('Espera a que cargue el dashboard','info'); return; }
-  if(window.__docxCdnFallo || typeof window.docx === 'undefined'){
+  if(!(await __asegurarDocx())){
     toast('No se pudo cargar el generador de Word (revisa tu internet) e intenta de nuevo','error');
     return;
   }
@@ -13359,7 +13379,7 @@ async function __dashExportarWord(){
 async function __dashExportarWordIntento(filaId){
   const x = (window.__intentoCache||{})[filaId];
   if(!x || !x.detalle || !x.detalle.length){ toast('Este intento no tiene detalle para exportar','info'); return; }
-  if(window.__docxCdnFallo || typeof window.docx === 'undefined'){
+  if(!(await __asegurarDocx())){
     toast('No se pudo cargar el generador de Word (revisa tu internet) e intenta de nuevo','error'); return;
   }
   const { Paragraph, TextRun, HeadingLevel, Table, WidthType } = window.docx;
@@ -13393,7 +13413,7 @@ async function __dashExportarWordAlumno(uid){
   const D = __dashVista || __dashDatos; // sesiones/tiempo de estudio sí respetan el periodo elegido
   const al = D.perfiles.find(p=>p.id===uid);
   if(!al){ toast('No se encontró al alumno','info'); return; }
-  if(window.__docxCdnFallo || typeof window.docx === 'undefined'){
+  if(!(await __asegurarDocx())){
     toast('No se pudo cargar el generador de Word (revisa tu internet) e intenta de nuevo','error'); return;
   }
   const { Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, ShadingType } = window.docx;
@@ -13500,7 +13520,7 @@ async function __dashExportarWordTodosIntentos(uid){
   if(!al){ toast('No se encontró al alumno','info'); return; }
   const intentosUid = (D.intentos||[]).filter(x=>x.usuario_id===uid).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   if(!intentosUid.length){ toast('Este alumno no tiene intentos registrados','info'); return; }
-  if(window.__docxCdnFallo || typeof window.docx === 'undefined'){
+  if(!(await __asegurarDocx())){
     toast('No se pudo cargar el generador de Word (revisa tu internet) e intenta de nuevo','error'); return;
   }
   const { Paragraph, TextRun, HeadingLevel, Table, WidthType } = window.docx;
