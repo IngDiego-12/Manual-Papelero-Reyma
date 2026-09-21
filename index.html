@@ -7285,7 +7285,7 @@ async function viewRanking(modId, periodo){
       window.__sb.rpc('ranking_avance', rpcArgs),
       conMargenDeFalla(window.__sb.from('ranking_historial').select('*').order('semana_inicio',{ascending:false}).order('posicion').limit(24)),
       conMargenDeFalla(window.__sb.from('muro_logros').select('*').order('creado_en',{ascending:false}).limit(15)),
-      conMargenDeFalla(window.__sb.from('reacciones').select('para_usuario_id').range(0,19999))
+      conMargenDeFalla(window.__sb.from('reacciones').select('para_usuario_id,creado_en').order('creado_en',{ascending:false}).range(0,49999))
     ]), 15000);
     const { data, error } = rPrincipal;
     const historial = rHistorial.data, muro = rMuro.data, reaccionesData = rReacciones.data;
@@ -11673,27 +11673,32 @@ async function __dashCargar(){
       sb.from('perfiles').select('*').order('nombre'),
       sb.from('unidades').select('id,modulo_id'),
       sb.from('modulos').select('id,titulo,orden').order('orden'),
-      sb.from('progreso_unidades').select('usuario_id,unidad_id,quiz_best,passed,reviewed,completado_en').range(0,19999),
-      sb.from('resultados_examen').select('usuario_id,modulo_id,score,aprobado,fecha,duracion_seg').range(0,19999),
-      sb.from('encuesta_respuestas').select('usuario_id,modulo_id,fecha,respuestas').range(0,19999),
+      sb.from('progreso_unidades').select('usuario_id,unidad_id,quiz_best,passed,reviewed,completado_en').order('completado_en',{ascending:false}).range(0,49999),
+      sb.from('resultados_examen').select('usuario_id,modulo_id,score,aprobado,fecha,duracion_seg').order('fecha',{ascending:false}).range(0,49999),
+      sb.from('encuesta_respuestas').select('usuario_id,modulo_id,fecha,respuestas').order('fecha',{ascending:false}).range(0,49999),
       // OJO: por default Supabase/PostgREST solo regresa 1000 filas si no se
       // le pide más — con el grupo creciendo, sesiones_uso ya pasó de esa
       // marca y algunos alumnos (los que quedaban después de la fila 1000)
       // se veían con "0 min" y "Nunca" de último acceso aunque sí tuvieran
       // sesiones guardadas. .range() le pide explícitamente hasta 20,000.
-      sb.from('sesiones_uso').select('usuario_id,inicio,fin,duracion_seg,desglose').range(0,19999),
-      sb.from('flashcard_calificaciones').select('usuario_id,unidad_id,card_id,calificacion,proxima_revision,updated_at').range(0,19999),
+      // OJO: sin .order() aquí, si el total de sesiones de TODA la plataforma ya
+      // pasa de 20,000 filas, Supabase se queda con las más VIEJAS por default —
+      // exactamente lo contrario de lo que importa para "¿ya se está guardando
+      // bien ahorita?". Con .order(desc) antes del .range(), si algún día hay que
+      // recortar, se recorta lo viejo, nunca lo reciente.
+      sb.from('sesiones_uso').select('usuario_id,inicio,fin,duracion_seg,desglose').order('inicio',{ascending:false}).range(0,49999),
+      sb.from('flashcard_calificaciones').select('usuario_id,unidad_id,card_id,calificacion,proxima_revision,updated_at').order('updated_at',{ascending:false}).range(0,49999),
       sb.from('flashcards').select('id,unidad_id,anverso'),
-      sb.from('intentos_examen').select('id,usuario_id,tipo,ref_id,score,aprobado,duracion_seg,cambios_pestana,fecha,detalle').range(0,19999),
+      sb.from('intentos_examen').select('id,usuario_id,tipo,ref_id,score,aprobado,duracion_seg,cambios_pestana,fecha,detalle').order('fecha',{ascending:false}).range(0,49999),
       sb.from('encuesta_preguntas').select('id,texto,tipo,orden').order('orden')
     ]);
     const nombresTabla = ['perfiles','unidades','modulos','progreso_unidades','resultados_examen',
       'encuesta_respuestas','sesiones_uso','flashcard_calificaciones','flashcards','intentos_examen','encuesta_preguntas'];
     // Aviso temprano si alguna tabla viene pegada justo al límite que pedimos
-    // — significa que ya se acercó a 20,000 filas y hay que subir el rango.
+    // — significa que ya se acercó a 50,000 filas y hay que subir el rango.
     const nombresPorIdx = nombresTabla;
     resultados.forEach((r,i)=>{
-      if(r.data && r.data.length>=19999) console.warn(`${nombresPorIdx[i]} llegó al límite de 20,000 filas — hay que subir el rango en __dashCargar.`);
+      if(r.data && r.data.length>=49999) console.warn(`${nombresPorIdx[i]} llegó al límite de 50,000 filas — hay que subir el rango en __dashCargar.`);
     });
     // Antes, si CUALQUIERA de estas 11 consultas fallaba (por ejemplo, un permiso
     // de Supabase mal puesto en una sola tabla), el error se quedaba callado y esa
