@@ -32914,7 +32914,7 @@ function __dashVerAlumno(uid){
     const sigueActiva = !s.fin && (Date.now() - _latidoMs) < 3*60*1000;
     const sesionAbandonada = !s.fin && !sigueActiva; // se quedó sin cerrar bien (se apagó/perdió señal), no es un "activo ahora" real
     return `<div class="dash-examrow">
-      <span>${horaInicio}${sigueActiva?' <span style="color:var(--go-d);font-weight:700">· sesión activa ahora</span>':''}${sesionAbandonada?' <span style="color:var(--ink3);font-weight:600" title="El aparato se apagó, perdió señal o cerró la app de golpe sin avisar — no se cerró bien, pero tampoco sigue conectado.">· no se cerró bien</span>':''}</span>
+      <span>${horaInicio}${sigueActiva?' <span style="color:var(--go-d);font-weight:700">· sesión activa ahora</span>':''}${sesionAbandonada?' <span style="color:var(--ink3);font-weight:600" title="Lo más probable es que haya bloqueado la pantalla, cambiado de app, o se haya quedado sin señal justo al salir — así se ve la mayoría de las veces en celular, no significa que haya pasado algo malo. Ningún navegador puede avisar un cierre perfecto al 100% de las veces.">· cierre no confirmado</span>':''}</span>
       <span style="color:var(--ink3);font-size:.82rem">${__fmtHoras(s.duracion_seg||0)}</span>
     </div>`;
   }).join('');
@@ -32935,7 +32935,7 @@ function __dashVerAlumno(uid){
       <div class="dash-kpi"><div class="dash-kpi__num">${s.sesionesN}</div><div class="dash-kpi__label">Sesiones registradas</div></div>
     </div>
     <div class="dash-detail-h">Historial de inicios de sesión</div>
-    <p style="font-size:.8rem;color:var(--ink3);margin:-.5rem 0 .75rem">Cada vez que entró — fecha, hora exacta y cuánto duró esa sesión. Solo puede tener una sesión abierta a la vez: si entra en otro celular, tablet o computadora, la anterior se cierra sola en máximo 90 segundos. Si no toca la pantalla por 20 minutos seguidos, la sesión se cierra sola por inactividad. "Sesión activa ahora" significa que mandó señal de vida hace menos de 3 minutos. "No se cerró bien" significa que el aparato se apagó, perdió señal o cerró la app de golpe — ya no está conectado, pero tampoco alcanzó a avisar que terminó.</p>
+    <p style="font-size:.8rem;color:var(--ink3);margin:-.5rem 0 .75rem">Cada vez que entró — fecha, hora exacta y cuánto duró esa sesión. Solo puede tener una sesión abierta a la vez: si entra en otro celular, tablet o computadora, la anterior se cierra sola en máximo 90 segundos. Si no toca la pantalla por 20 minutos seguidos, la sesión se cierra sola por inactividad. "Sesión activa ahora" significa que mandó señal de vida hace menos de 3 minutos. "Cierre no confirmado" significa que dejó de mandar señal sin que el navegador alcanzara a avisar — casi siempre es solo que bloqueó la pantalla, cambió de app o se quedó sin señal; ningún sitio web puede detectar un cierre perfecto el 100% de las veces, así que esto no es necesariamente un problema.</p>
     ${sesionesHTML}
     <div class="dash-detail-h">Tiempo de estudio por día (tiempo activo, no de pestaña abierta)</div>
     <p style="font-size:.8rem;color:var(--ink3);margin:-.5rem 0 .75rem">Suma de minutos activos de este alumno, agrupados por día. Una barra más alta = más tiempo con actividad real ese día.</p>
