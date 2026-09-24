@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -24012,10 +24011,22 @@ window.escAttr = escAttr;
 function jsAttr(s){ return escAttr(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r?\n/g,'\\n')); }
 window.jsAttr = jsAttr;
 function inlineMd(s){
+  // Extraemos imágenes ![alt](url) ANTES de escapar el texto, para poder
+  // convertirlas a <img> aunque no estén solas en su propia línea. Sin esto,
+  // una imagen que Word/Mammoth dejó pegada al texto de un párrafo (sin un
+  // salto de línea real justo antes) se queda como texto literal en vez de
+  // renderizarse.
+  const __imgs = [];
+  s = s.replace(/[-*+]\s+(?=!\[[^\]]*\]\([^)\s]+\))/g, ''); // viñeta suelta justo antes de una imagen que quedó pegada al párrafo
+  s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, function(_, alt, url){
+    __imgs.push(`<img src="${esc(url)}" alt="${esc(alt||"")}" loading="lazy" style="max-width:100%;border-radius:8px">`);
+    return "\u0000IMG"+(__imgs.length-1)+"\u0000";
+  });
   s = esc(s);
   s = s.replace(/`([^`]+)`/g,'<code>$1</code>');
   s = s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
   s = s.replace(/(?<!\*)\*(?!\*)([^*]+)\*(?!\*)/g,'<em>$1</em>');
+  s = s.replace(/\u0000IMG(\d+)\u0000/g, function(_, idx){ return __imgs[+idx]; });
   return s;
 }
 function calloutFrom(text){
@@ -31851,7 +31862,7 @@ async function __dashCargar(){
       sb.from('sesiones_uso').select('usuario_id,inicio,fin,duracion_seg,desglose').order('inicio',{ascending:false}).range(0,49999),
       sb.from('flashcard_calificaciones').select('usuario_id,unidad_id,card_id,calificacion,proxima_revision,updated_at').order('updated_at',{ascending:false}).range(0,49999),
       sb.from('flashcards').select('id,unidad_id,anverso'),
-      sb.from('intentos_examen').select('id,usuario_id,tipo,ref_id,score,aprobado,duracion_seg,cambios_pestana,fecha,detalle').order('fecha',{ascending:false}).range(0,49999),
+      sb.from('intentos_examen').select('id,usuario_id,tipo,ref_id,score,aprobado,duracion_seg,cambios_pestana,fecha,detalle,incidentes').order('fecha',{ascending:false}).range(0,49999),
       sb.from('encuesta_preguntas').select('id,texto,tipo,orden').order('orden')
     ]);
     const nombresTabla = ['perfiles','unidades','modulos','progreso_unidades','resultados_examen',
@@ -34146,11 +34157,8 @@ window.__mostrarBienvenidaDeNuevo = __mostrarBienvenidaDeNuevo;
     sb.rpc('guardar_intento_examen', {
       p_session_token: window.__miSesionToken || null, p_tipo: datos.tipo, p_ref_id: datos.refId,
       p_score: datos.score, p_pass: datos.pass, p_duracion_seg: datos.duracionSeg || null,
-      p_cambios_pestana: datos.cambiosPestana || 0, p_detalle: datos.detalle || []
-      // p_incidentes queda listo en "datos.incidentes" pero todavía no se manda —
-      // falta correr arreglo_desglose_incidentes.sql en Supabase para que la
-      // función y la columna existan. En cuanto lo corras, avísame y lo activo
-      // aquí (agregar de vuelta: p_incidentes: datos.incidentes || []).
+      p_cambios_pestana: datos.cambiosPestana || 0, p_detalle: datos.detalle || [],
+      p_incidentes: datos.incidentes || []
     }).then(({error})=>{
       if(error){
         console.error('No se pudo guardar el detalle del intento en la nube:', error);
