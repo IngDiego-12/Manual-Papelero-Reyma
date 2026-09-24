@@ -21139,6 +21139,7 @@ a{color:inherit}
 .rankc-mascota{position:absolute;bottom:-4px;right:-10px;line-height:0;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3));background:#fff;border-radius:50%;padding:2px;cursor:pointer;transition:transform .14s}
 .rankc-mascota:hover{transform:scale(1.08)}
 .rankc-mascota-inline{display:inline-flex;vertical-align:-8px;margin-right:6px;line-height:0;cursor:pointer;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.rankc-enlinea{color:var(--go-d,#3a7a52);font-size:.72rem;font-weight:700;margin-left:4px}
 .rankc-posnum{font-size:.72rem;color:rgba(30,25,10,.55);font-weight:800;margin-bottom:3px;letter-spacing:.02em}
 .rankc-nombre{font-size:.86rem;font-weight:800;color:#26221a;margin-bottom:5px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25}
@@ -23835,7 +23836,8 @@ function blankState(){
   return {
     units:{}, freeMode:false, freeModeManualOff:false, theme:"consola", fz:1, onboarded:false, touredReal:false,
     lastUnit:null, favorites:[], moduleExams:{}, cardRatings:{}, earnedBadges:[],
-    studyDays:{}, notes:{}, encuestasCerradas:{}, hayEncuestaConfigurada:false, railCollapsed:false
+    studyDays:{}, notes:{}, encuestasCerradas:{}, hayEncuestaConfigurada:false, railCollapsed:false,
+    reflexionesEscritas:{}, reflexionModuloDisponible:false
   };
 }
 function load(){
@@ -23857,6 +23859,8 @@ function load(){
   if(!s.notes||typeof s.notes!=="object") s.notes={};                     // unidad_id -> {texto, archivos:[{nombre,path,tipo,tamano}]}
   if(!s.encuestasCerradas||typeof s.encuestasCerradas!=="object") s.encuestasCerradas={}; // modulo_id -> true (encuesta de cierre ya respondida)
   if(typeof s.hayEncuestaConfigurada!=="boolean") s.hayEncuestaConfigurada=false; // si Alfonso ya activó preguntas de encuesta
+  if(!s.reflexionesEscritas||typeof s.reflexionesEscritas!=="object") s.reflexionesEscritas={}; // modulo_id -> true (ya escribió su nota de reflexión)
+  if(typeof s.reflexionModuloDisponible!=="boolean") s.reflexionModuloDisponible=false; // true solo si la tabla reflexiones_modulo ya existe (SQL corrido) — si no, esta nota no bloquea nada, por seguridad
   if(!s.practicaObligatoria||typeof s.practicaObligatoria!=="object") s.practicaObligatoria={}; // "CHK3" -> {quiz:bool, flash:bool}
   if(!s.rankingPosPrevia||typeof s.rankingPosPrevia!=="object") s.rankingPosPrevia={}; // "modId|periodo" -> última posición vista
   if(typeof s.railCollapsed!=="boolean") s.railCollapsed=false;
@@ -23892,6 +23896,16 @@ function moduleProgress(m){
   if(!m || !m.unidades) return {done:0, total:0, pct:0};
   const done = m.unidades.filter(unitComplete).length;
   return {done, total:m.unidades.length, pct: m.unidades.length? Math.round(done/m.unidades.length*100):0};
+}
+// Solo revisa que las UNIDADES del módulo estén terminadas — es lo único que
+// debe hacer falta para poder PRESENTAR el examen del módulo. No se puede usar
+// moduleComplete() para esto, porque esa función (más abajo) exige que el
+// examen ya esté aprobado — usarla aquí crearía un candado que necesita
+// abrirse a sí mismo primero: nadie podría tomar el examen jamás.
+function unidadesDelModuloCompletas(m){
+  if(!m) return false;
+  const p=moduleProgress(m);
+  return p.done===p.total;
 }
 function moduleComplete(m){
   if(!m) return false;
@@ -23954,6 +23968,10 @@ function moduleUnlocked(mid){
   if(idx<=0) return true;              // M1 siempre abierto
   const prev = order[idx-1];
   if(!moduleComplete(MOD_MAP[prev])) return false; // requiere el módulo previo completo
+  // también hay que haber escrito la nota de reflexión de ese módulo (obligatoria) —
+  // pero solo si la tabla ya existe (arreglo_reflexiones_modulo.sql corrido); si no,
+  // no bloquea nada, para no dejar a todos los alumnos atorados por error.
+  if(state.reflexionModuloDisponible && !state.reflexionesEscritas[prev]) return false;
   // además de completar el módulo, hay que haber contestado su encuesta de cierre
   // (solo bloquea si Alfonso ya configuró preguntas activas; si no hay preguntas, no aplica)
   if(state.hayEncuestaConfigurada && !state.encuestasCerradas[prev]) return false;
@@ -23972,6 +23990,9 @@ function moduleLockInfo(mid){
   const prev = order[idx-1];
   if(!moduleComplete(MOD_MAP[prev])){
     return {locked:true, reason:"Completa el módulo anterior para desbloquear, o activa Modo libre en Ajustes"};
+  }
+  if(state.reflexionModuloDisponible && !state.reflexionesEscritas[prev]){
+    return {locked:true, reason:"Escribe tu nota de reflexión del módulo anterior para desbloquear este módulo", reflexionPendienteDe:prev};
   }
   if(state.hayEncuestaConfigurada && !state.encuestasCerradas[prev]){
     return {locked:true, reason:"Responde la encuesta de cierre del módulo anterior para desbloquear este módulo", encuestaPendienteDe:prev};
@@ -24299,7 +24320,7 @@ function railModule(mid){
   const active = gv.name==="module"&&gv.mid===mid || gv.name==="unit"&&UNIT_MAP[gv.uid].modulo===mid;
   if(!unlocked){
     const li=moduleLockInfo(mid);
-    return `<div class="navitem navitem--locked" title="${mid} · ${m.titulo} (bloqueado)" data-locked="${li.reason}" ${li.encuestaPendienteDe?`data-encuesta-pendiente="${li.encuestaPendienteDe}"`:''} ${li.checkpointPendiente?`data-checkpoint-pendiente="${li.checkpointPendiente}"`:''}>
+    return `<div class="navitem navitem--locked" title="${mid} · ${m.titulo} (bloqueado)" data-locked="${li.reason}" ${li.reflexionPendienteDe?`data-reflexion-pendiente="${li.reflexionPendienteDe}"`:''} ${li.encuestaPendienteDe?`data-encuesta-pendiente="${li.encuestaPendienteDe}"`:''} ${li.checkpointPendiente?`data-checkpoint-pendiente="${li.checkpointPendiente}"`:''}>
       <span class="navitem__num">${mid}</span><span class="navitem__tx">${m.titulo}</span>
       <span class="navitem__ic">${I.lock}</span></div>`;
   }
@@ -24412,7 +24433,7 @@ function stationCard(mid){
   const stCls = done?"station--done":"";
   const li = !unlocked ? moduleLockInfo(mid) : null;
   return `<div class="station ${stCls}">
-    <div class="scard ${cls}" ${unlocked?`data-go="module" data-mid="${mid}"`:`data-locked="${li.reason}" ${li.encuestaPendienteDe?`data-encuesta-pendiente="${li.encuestaPendienteDe}"`:''} ${li.checkpointPendiente?`data-checkpoint-pendiente="${li.checkpointPendiente}"`:''}`}>
+    <div class="scard ${cls}" ${unlocked?`data-go="module" data-mid="${mid}"`:`data-locked="${li.reason}" ${li.reflexionPendienteDe?`data-reflexion-pendiente="${li.reflexionPendienteDe}"`:''} ${li.encuestaPendienteDe?`data-encuesta-pendiente="${li.encuestaPendienteDe}"`:''} ${li.checkpointPendiente?`data-checkpoint-pendiente="${li.checkpointPendiente}"`:''}`}>
       <div class="scard__top">
         <div class="scard__num">${unlocked?mid:I.lock}</div>
         ${done?`<span style="color:var(--go)">${I.check}</span>`:!unlocked?`<span class="scard__lock">${I.lock}</span>`:''}
@@ -24432,11 +24453,11 @@ function crossCard(mid){
   const done=p.done===p.total;
   const cls=!unlocked?"ccard--locked":done?"ccard--done":"";
   const li = !unlocked ? moduleLockInfo(mid) : null;
-  return `<div class="ccard ${cls}" ${unlocked?`data-go="module" data-mid="${mid}"`:`data-locked="${li.reason}" ${li.encuestaPendienteDe?`data-encuesta-pendiente="${li.encuestaPendienteDe}"`:''} ${li.checkpointPendiente?`data-checkpoint-pendiente="${li.checkpointPendiente}"`:''}`}>
+  return `<div class="ccard ${cls}" ${unlocked?`data-go="module" data-mid="${mid}"`:`data-locked="${li.reason}" ${li.reflexionPendienteDe?`data-reflexion-pendiente="${li.reflexionPendienteDe}"`:''} ${li.encuestaPendienteDe?`data-encuesta-pendiente="${li.encuestaPendienteDe}"`:''} ${li.checkpointPendiente?`data-checkpoint-pendiente="${li.checkpointPendiente}"`:''}`}>
     <div class="ccard__top">
       <div class="ccard__num">${unlocked?mid:I.lock}</div>
       <div><div class="ccard__title">${m.titulo}</div>
-      <div class="ccard__sub">${unlocked?p.done+'/'+p.total+' · '+p.pct+'%':(li.checkpointPendiente?'Falta tu práctica obligatoria':li.encuestaPendienteDe?'Falta responder la encuesta':'Completa el módulo previo')}</div></div>
+      <div class="ccard__sub">${unlocked?p.done+'/'+p.total+' · '+p.pct+'%':(li.checkpointPendiente?'Falta tu práctica obligatoria':li.encuestaPendienteDe?'Falta responder la encuesta':li.reflexionPendienteDe?'Falta tu nota de reflexión':'Completa el módulo previo')}</div></div>
     </div>
     <div class="ccard__bar"><i style="width:${p.pct}%"></i></div>
   </div>`;
@@ -24486,7 +24507,7 @@ function viewModule(mid){
   // Examen del módulo (A1) — capstone acumulativo
   const poolSize = m.unidades.reduce((s,u)=>s+((u.quiz&&u.quiz.length)||0),0) + (m.examenPropio?m.examenPropio.length:0);
   if(poolSize>0){
-    const ready = moduleComplete(m) || freeModeActivo();
+    const ready = unidadesDelModuloCompletas(m) || freeModeActivo();
     const ex = A.state.moduleExams[mid];
     h+=`<section class="exam-card ${ready?'':'exam-card--locked'}" ${ready?`data-go="exam" data-mid="${mid}"`:`data-locked="Completa las ${m.unidades.length} unidades del módulo para presentar el examen"`}>
       <div class="exam-card__ic">${ready?I.award:I.lock}</div>
@@ -24929,6 +24950,64 @@ async function __borrarAdjuntoNota(uid, idx){
 }
 
 /* ===================== ENCUESTA DE CIERRE DE MÓDULO ===================== */
+async function __revisarReflexionModulo(mid){
+  try{
+    const uid = window.__authPerfil?.id;
+    if(!uid || !window.__sb) return;
+    const { data: yaEscrita } = await window.__sb.from('reflexiones_modulo')
+      .select('id').eq('usuario_id',uid).eq('modulo_id',mid).maybeSingle();
+    if(yaEscrita){ A.state.reflexionesEscritas[mid] = true; save(); return; } // ya la escribió
+    __mostrarModalReflexion(mid);
+  }catch(err){ console.error('Error revisando nota de reflexión:', err); }
+}
+function __mostrarModalReflexion(mid){
+  let overlay = document.getElementById('reflexionOverlay');
+  if(!overlay){
+    overlay = document.createElement('div');
+    overlay.id = 'reflexionOverlay';
+    overlay.className = 'encuesta-overlay';
+    document.body.appendChild(overlay);
+  }
+  const m = MOD_MAP[mid];
+  overlay.innerHTML = `<div class="encuesta-box">
+    <h2>${I.brain} Antes de seguir — ¿cómo te fue con ${m?.titulo||('el módulo '+mid)}?</h2>
+    <p>Escribe unas líneas: qué te costó más trabajo, qué te quedó claro, o cualquier cosa que quieras que sepamos. No es examen ni afecta tu calificación — es obligatorio escribir algo, aunque sea corto, para desbloquear el siguiente módulo.</p>
+    <div id="reflexionPreguntas">
+      <div class="encuesta-q">
+        <textarea id="reflexionTexto" rows="5" placeholder="Ej. Lo que más me costó fue entender la corona del rodillo, pero ya le entendí con el ejemplo real de la máquina..."></textarea>
+      </div>
+    </div>
+    <div class="cnt-err" id="reflexionErr" style="display:none">Escribe algo antes de continuar.</div>
+    <div class="encuesta-foot" style="justify-content:flex-end">
+      <button class="btn btn--primary" id="reflexionEnviar">Enviar y continuar</button>
+    </div>
+  </div>`;
+  overlay.classList.add('encuesta-overlay--open');
+  const cerrar = ()=>overlay.classList.remove('encuesta-overlay--open');
+  document.getElementById('reflexionEnviar').onclick = async ()=>{
+    const texto = document.getElementById('reflexionTexto').value.trim();
+    if(!texto){ document.getElementById('reflexionErr').style.display='block'; return; }
+    const uid = window.__authPerfil?.id;
+    if(!uid){ cerrar(); return; }
+    const btn = document.getElementById('reflexionEnviar');
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    try{
+      const { error } = await window.__sb.from('reflexiones_modulo').insert({ usuario_id:uid, modulo_id:mid, texto });
+      if(error) throw error;
+      A.state.reflexionesEscritas[mid] = true;
+      save();
+      toast('¡Gracias por tu reflexión!','go');
+      cerrar();
+      __revisarEncuestaCierre(mid); // encadena la encuesta de cierre, si aplica
+      if(typeof render==='function') render();
+    }catch(err){
+      console.error('No se pudo guardar la reflexión:', err);
+      document.getElementById('reflexionErr').textContent = 'No se pudo guardar — revisa tu internet e intenta de nuevo.';
+      document.getElementById('reflexionErr').style.display='block';
+      btn.disabled = false; btn.textContent = 'Enviar y continuar';
+    }
+  };
+}
 async function __revisarEncuestaCierre(mid){
   try{
     const uid = window.__authPerfil?.id;
@@ -25611,7 +25690,7 @@ function buildQuiz(panel, qs, opts){
     if(u && pass && !prevPassed) toast(`Unidad ${u.numero} completada · ${pct}%`,"go");
     if(moduloRecienCompletado && window.__publicarEnMuro) window.__publicarEnMuro('modulo_completo', moduloRecienCompletado);
     if(opts.examMid && pass) toast(`Examen del módulo ${opts.examMid} aprobado · ${pct}%`,"go");
-    if(opts.examMid && pass) __revisarEncuestaCierre(opts.examMid);
+    if(opts.examMid && pass) __revisarReflexionModulo(opts.examMid); // esta encadena la encuesta de cierre después
     if(opts.checkpointObligatorio && pass) toast('Quiz de práctica obligatoria completado','go');
     $("#qRetry").onclick=()=>{ confirmarInicio(iniciarIntento); };
     renderRail(); renderTop();
@@ -26787,6 +26866,9 @@ function viewTutoriales(){
 
 /* ===================== EVENTOS GLOBALES ===================== */
 document.addEventListener("click",e=>{
+  // módulo bloqueado específicamente por reflexión pendiente: reabrir ese modal
+  const refEl=e.target.closest("[data-reflexion-pendiente]");
+  if(refEl){ __revisarReflexionModulo(refEl.dataset.reflexionPendiente); return; }
   // módulo bloqueado específicamente por encuesta pendiente: reabrir la encuesta
   const encEl=e.target.closest("[data-encuesta-pendiente]");
   if(encEl){ __revisarEncuestaCierre(encEl.dataset.encuestaPendiente); return; }
@@ -27415,20 +27497,40 @@ async function viewRanking(modId, periodo){
       p,
       new Promise((_, rej) => setTimeout(()=>rej(new Error('Se tardó demasiado en responder — revisa tu conexión a internet.')), ms))
     ]);
-    const [rPrincipal, rHistorial, rMuro, rReacciones] = await conTimeout(Promise.all([
+    const [rPrincipal, rHistorial, rMuro, rReacciones, rEnLinea] = await conTimeout(Promise.all([
       window.__sb.rpc('ranking_avance', rpcArgs),
       conMargenDeFalla(window.__sb.from('ranking_historial').select('*').order('semana_inicio',{ascending:false}).order('posicion').limit(24)),
       conMargenDeFalla(window.__sb.from('muro_logros').select('*').order('creado_en',{ascending:false}).limit(15)),
-      conMargenDeFalla(window.__sb.from('reacciones').select('para_usuario_id,creado_en').order('creado_en',{ascending:false}).range(0,49999))
+      conMargenDeFalla(window.__sb.from('reacciones').select('para_usuario_id,creado_en').order('creado_en',{ascending:false}).range(0,49999)),
+      conMargenDeFalla(window.__sb.rpc('quien_esta_en_linea'))
     ]), 15000);
     const { data, error } = rPrincipal;
     const historial = rHistorial.data, muro = rMuro.data, reaccionesData = rReacciones.data;
+    const enLineaIds = new Set((rEnLinea.data||[]).map(r=>r.usuario_id));
     if(rHistorial.error) console.warn('Salón de la fama no disponible (¿ya corriste el SQL?):', rHistorial.error.message);
     if(rMuro.error) console.warn('Muro de logros no disponible (¿ya corriste el SQL?):', rMuro.error.message);
     if(rReacciones.error) console.warn('Choca esos cinco no disponible (¿ya corriste el SQL?):', rReacciones.error.message);
+    if(rEnLinea.error) console.warn('"Quién está en línea" no disponible (¿ya corriste arreglo_quien_esta_en_linea.sql?):', rEnLinea.error.message);
     if(error) throw error;
     const conteoHi5 = {};
     (reaccionesData||[]).forEach(r=>{ conteoHi5[r.para_usuario_id] = (conteoHi5[r.para_usuario_id]||0)+1; });
+    // Aviso de "te mandaron un choca esos cinco" desde la última vez que
+    // viste el ranking — se guarda solo en este aparato (localStorage), no en
+    // Supabase, así que si entras desde otro dispositivo puede que veas el
+    // mismo aviso una vez más ahí; es un detalle menor, no un problema real.
+    if(miId){
+      try{
+        const LS_HI5_KEY = 'consolaPapelero.hi5VistosHasta';
+        const vistosHasta = localStorage.getItem(LS_HI5_KEY);
+        const nuevos = (reaccionesData||[]).filter(r=>
+          r.para_usuario_id===miId && (!vistosHasta || new Date(r.creado_en) > new Date(vistosHasta))
+        );
+        if(nuevos.length && typeof toast==='function'){
+          toast(nuevos.length===1 ? '¡Un compañero te mandó un choca esos cinco! ✋' : `¡${nuevos.length} compañeros te mandaron un choca esos cinco! ✋`, 'go');
+        }
+        localStorage.setItem(LS_HI5_KEY, new Date().toISOString());
+      }catch(e){ /* localStorage puede fallar en modo privado — no pasa nada, solo no se avisa */ }
+    }
     // Comparación con tu propia semana pasada — solo tiene sentido en la
     // pestaña "Esta semana" del ranking general (no por módulo, para no
     // complicar de más la lectura).
@@ -27620,7 +27722,7 @@ async function viewRanking(modId, periodo){
           <div class="rankc-av">${window.__avatarHTML ? window.__avatarHTML({foto_url:f.foto_url}, i===0?52:38) : esc(iniciales(f.nombre))}</div>
           <span class="rankc-mascota" data-go="miperfil-papelero" data-uid="${f.id}" title="Credencial del Papelero: ${esc(mascotaEtapaNombre(f.pctGeneral, f.rol!=='alumno'))} (toca para ver)">${mascotaSvg(f.pctGeneral,30,f.rol!=='alumno')}</span>
         </div>
-        <div class="rankc-nombre">${esc(f.nombre||'—')}${esYo?' (tú)':''}${staffTag(f)}</div>
+        <div class="rankc-nombre">${esc(f.nombre||'—')}${esYo?' (tú)':''}${staffTag(f)}${enLineaIds.has(f.id)?' <span class=\"rankc-enlinea\" title=\"Estudiando ahora mismo\">● en línea</span>':''}</div>
         ${mostrarRango?`<div class="rankc-rango">${esc(tituloDeAvance(f.pctGeneral))}</div>`:''}
         <div class="rankc-stats">${statsTxt(f)}</div>
         ${hi5Boton(f)}
@@ -27635,7 +27737,7 @@ async function viewRanking(modId, periodo){
         const pos = idx+4; const esYo = f.id===miId;
         h += `<tr class="${esYo?'rankc-row--yo':''}">
           <td>${pos}</td>
-          <td>${`<span class="rankc-mascota-inline" data-go="miperfil-papelero" data-uid="${f.id}" title="Credencial del Papelero: ${esc(mascotaEtapaNombre(f.pctGeneral, f.rol!=='alumno'))} (toca para ver)">${mascotaSvg(f.pctGeneral,26,f.rol!=='alumno')}</span>`}${esc(f.nombre||'—')}${esYo?' (tú)':''}${staffTag(f)}${mostrarRango?`<div class="rankc-rango">${esc(tituloDeAvance(f.pctGeneral))}</div>`:''}${logrosDe(f)}</td>
+          <td>${`<span class="rankc-mascota-inline" data-go="miperfil-papelero" data-uid="${f.id}" title="Credencial del Papelero: ${esc(mascotaEtapaNombre(f.pctGeneral, f.rol!=='alumno'))} (toca para ver)">${mascotaSvg(f.pctGeneral,26,f.rol!=='alumno')}</span>`}${esc(f.nombre||'—')}${esYo?' (tú)':''}${staffTag(f)}${enLineaIds.has(f.id)?' <span class=\"rankc-enlinea\" title=\"Estudiando ahora mismo\">● en línea</span>':''}${mostrarRango?`<div class="rankc-rango">${esc(tituloDeAvance(f.pctGeneral))}</div>`:''}${logrosDe(f)}</td>
           <td>${statsTxtInline(f)} ${hi5Boton(f)}</td>
         </tr>`;
       });
@@ -34029,7 +34131,7 @@ window.__mostrarBienvenidaDeNuevo = __mostrarBienvenidaDeNuevo;
      — así el progreso persiste entre celular/tablet/PC del mismo usuario. */
   async function __syncPull(uid){
     try{
-      const [{data:prog,error:e1}, {data:favs,error:e2}, {data:exams,error:e3}, {data:notas,error:e4}, {data:encResp,error:e5}, {count:encCount,error:e6}, {data:cardRat,error:e7}, {data:checkpoints,error:e8}] = await Promise.all([
+      const [{data:prog,error:e1}, {data:favs,error:e2}, {data:exams,error:e3}, {data:notas,error:e4}, {data:encResp,error:e5}, {count:encCount,error:e6}, {data:cardRat,error:e7}, {data:checkpoints,error:e8}, {data:reflex,error:e9}] = await Promise.all([
         sb.from('progreso_unidades').select('*').eq('usuario_id', uid),
         sb.from('favoritos').select('unidad_id').eq('usuario_id', uid),
         sb.from('resultados_examen').select('modulo_id,score,aprobado,fecha').eq('usuario_id', uid),
@@ -34037,9 +34139,11 @@ window.__mostrarBienvenidaDeNuevo = __mostrarBienvenidaDeNuevo;
         sb.from('encuesta_respuestas').select('modulo_id').eq('usuario_id', uid),
         sb.from('encuesta_preguntas').select('id', {count:'exact', head:true}).eq('activa', true),
         sb.from('flashcard_calificaciones').select('unidad_id,card_id,calificacion,proxima_revision,updated_at').eq('usuario_id', uid),
-        sb.from('intentos_examen').select('tipo,ref_id,aprobado').eq('usuario_id', uid).in('tipo', ['practica_obligatoria_quiz','practica_obligatoria_fc']).eq('aprobado', true)
+        sb.from('intentos_examen').select('tipo,ref_id,aprobado').eq('usuario_id', uid).in('tipo', ['practica_obligatoria_quiz','practica_obligatoria_fc']).eq('aprobado', true),
+        sb.from('reflexiones_modulo').select('modulo_id').eq('usuario_id', uid)
       ]);
       if(e1||e2||e3||e4||e5||e6||e7||e8){ console.warn('Sync pull: alguna tabla no respondió (¿ya corriste el schema_progreso.sql?)', e1||e2||e3||e4||e5||e6||e7||e8); }
+      if(e9){ console.warn('reflexiones_modulo no respondió (¿ya corriste arreglo_reflexiones_modulo.sql? mientras tanto, esa nota no bloqueará el avance)', e9); }
       const A = window.__app;
       if(!A) return; // la parte 2 (vistas) todavía no ha corrido — no hay nada que fusionar
       if(cardRat && cardRat.length){
@@ -34091,6 +34195,10 @@ window.__mostrarBienvenidaDeNuevo = __mostrarBienvenidaDeNuevo;
         encResp.forEach(r=>{ A.state.encuestasCerradas[r.modulo_id] = true; });
       }
       A.state.hayEncuestaConfigurada = !!(encCount && encCount > 0);
+      if(!e9){
+        A.state.reflexionModuloDisponible = true; // la tabla sí existe — la nota ya bloquea de verdad
+        (reflex||[]).forEach(r=>{ A.state.reflexionesEscritas[r.modulo_id] = true; });
+      }
       A.save();
       if(A.render) A.render();
     }catch(err){ console.error('Error al traer el progreso guardado:', err); }
